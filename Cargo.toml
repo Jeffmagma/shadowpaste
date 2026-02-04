@@ -11,6 +11,8 @@ dioxus = { version = "0.7.1", features = [] }
 tokio = { version = "1.49.0", features = ["full"] }
 clipboard-master = "4.0.0"
 arboard = "3.6.1"
+image = "0.25.9"
+base64 = "0.22.1"
 
 [features]
 default = ["desktop"]

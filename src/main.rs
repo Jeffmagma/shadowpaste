@@ -1,38 +1,54 @@
-use dioxus::prelude::*;
+#![allow(non_snake_case)] // uppercase component function names
+mod monitor;
 
-const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
+use dioxus::prelude::*;
+use monitor::ClipboardContent;
+
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 fn main() {
-    dioxus::launch(App);
+	dioxus::launch(App);
 }
 
 #[component]
+fn ClipboardView(content: ClipboardContent) -> Element {
+	match content {
+		ClipboardContent::Text(text) => rsx! {
+			p { class: "text-sm line-clamp-3 font-mono", "{text}" }
+		},
+		ClipboardContent::Image(src) => rsx! {
+			img { src: "{src}", class: "max-w-full h-auto rounded" }
+		},
+		ClipboardContent::Empty => rsx! {
+			p { class: "text-xs text-slate-400", "Empty Clipboard" }
+		}
+	}
+}
+
 fn App() -> Element {
-    rsx! {
-        document::Link { rel: "icon", href: FAVICON }
-        document::Link { rel: "stylesheet", href: MAIN_CSS } document::Link { rel: "stylesheet", href: TAILWIND_CSS }
-        Hero {}
+	let mut history = use_signal(|| Vec::<ClipboardContent>::new());
 
-    }
-}
+	use_effect(move || {
+		let mut rx = monitor::start_listener();
+		
+		spawn(async move {
+			while let Some(content) = rx.recv().await {
+				history.write().push(content);
+			}
+		});
+	});
 
-#[component]
-pub fn Hero() -> Element {
-    rsx! {
-        div {
-            id: "hero",
-            img { src: HEADER_SVG, id: "header" }
-            div { id: "links",
-                a { href: "https://dioxuslabs.com/learn/0.7/", "📚 Learn Dioxus" }
-                a { href: "https://dioxuslabs.com/awesome", "🚀 Awesome Dioxus" }
-                a { href: "https://github.com/dioxus-community/", "📡 Community Libraries" }
-                a { href: "https://github.com/DioxusLabs/sdk", "⚙️ Dioxus Development Kit" }
-                a { href: "https://marketplace.visualstudio.com/items?itemName=DioxusLabs.dioxus", "💫 VSCode Extension" }
-                a { href: "https://discord.gg/XgGxMSkvUM", "👋 Community Discord" }
-            }
-        }
-    }
+	rsx! {
+		document::Stylesheet { href: TAILWIND_CSS }
+
+		div { class: "p-6 font-sans max-w-3xl mx-auto",
+			h2 { class: "text-2xl font-bold mb-6", "shadowpaste" }
+
+			for (i, item) in history().iter().enumerate() {
+				div { key: "{i}", class: "py-3 border-b border-gray-100 last:border-0",
+					ClipboardView { content: item.clone() }
+				}
+			}
+		}
+	}
 }
