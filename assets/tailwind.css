@@ -204,6 +204,9 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
   }
+  .flex {
+    display: flex;
+  }
   .h-auto {
     height: auto;
   }
@@ -215,6 +218,12 @@
   }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
+  }
+  .flex-col {
+    flex-direction: column;
+  }
+  .gap-1 {
+    gap: calc(var(--spacing) * 1);
   }
   .rounded {
     border-radius: 0.25rem;
