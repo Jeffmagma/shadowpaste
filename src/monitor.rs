@@ -42,8 +42,7 @@ impl ClipboardHandler for Handler {
         sleep(time::Duration::from_millis(50)); // https://learn.microsoft.com/en-us/answers/questions/1327362/wm-clipboardupdate-issue
         let content = read_clipboard();
 
-        // Deduplicate: skip if identical to the last clipboard content
-        // This filters out the snipping tool's double-fire and repeated copies of the same content
+        // make sure new data is different from last
         if self.last_content.as_ref() == Some(&content) {
             return CallbackResult::Next;
         }

@@ -39,7 +39,7 @@ impl Database {
         Ok(Self { conn })
     }
 
-    pub fn insert(&self, entry: &ClipboardEntry) -> rusqlite::Result<()> {
+    pub fn insert(&self, entry: &ClipboardEntry) -> rusqlite::Result<i64> {
         let (content_type, content) = match &entry.content {
             ClipboardContent::Text(t) => ("text", t.clone()),
             ClipboardContent::Image(s) => ("image", s.clone()),
@@ -51,6 +51,14 @@ impl Database {
             params![content_type, content, entry.copied_at.to_rfc3339()],
         )?;
 
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn delete_by_id(&self, id: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM clipboard_history WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 
