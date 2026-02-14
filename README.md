@@ -6,7 +6,8 @@
 
 *   **⚡ Zero-Latency Capture:** Uses native Windows hooks (`WM_CLIPBOARDUPDATE`) for instant capture with near-zero CPU usage.
 *   **🧠 Local AI Brain:** Embeds your clipboard content using `fastembed-rs` to allow semantic searching (e.g., search "recipe" to find a link to a cooking blog).
-*   **🔒 Privacy First:** Local-only database. Will later detect flags that represent sensitive data and exclude it from the database.
+*   **🔒 Privacy First:** All clipboard history and AI vectors are stored locally in a SQLite database at `%LOCALAPPDATA%\shadowpaste\shadowpaste.db`.
+*   **🪄 Hybrid Search:** Combines keyword search with vector embedding semantic search to provide the best of both worlds.
 *   **🎨 Modern UI:** Built with Dioxus (React-like Rust) and Tailwind CSS for a sleek, dark-mode experience.
 
 ## 🛠️ Architecture
@@ -64,3 +65,13 @@ graph TD
     ```bash
     dx serve
     ```
+
+3.  **Build for Release**
+    ```bash
+    dx build --release --platform desktop
+    ```
+
+## 🗺️ Roadmap
+- [ ] Sensitive data/password handling
+- [ ] Global hotkey to open the app
+- [ ] History pinning/favoriting
