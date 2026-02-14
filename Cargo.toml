@@ -16,6 +16,8 @@ base64 = "0.22.1"
 rusqlite = { version = "0.34", features = ["bundled"] }
 chrono = "0.4"
 dirs = "6"
+fastembed = { version = "5.9.0", features = ["image"] }
+anyhow = "1.0.101"
 
 [features]
 default = ["desktop"]

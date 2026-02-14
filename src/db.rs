@@ -7,10 +7,19 @@ pub struct ClipboardEntry {
     pub id: i64,
     pub content: ClipboardContent,
     pub copied_at: DateTime<Local>,
+    pub embedding: Option<Vec<f32>>,
+}
+
+fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
+    embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
+    bytes.chunks_exact(4).map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect()
 }
 
 pub struct Database {
-    conn: Connection,
+    conn: Connection
 }
 
 impl Database {
@@ -32,7 +41,8 @@ impl Database {
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 content_type TEXT    NOT NULL,
                 content      TEXT    NOT NULL,
-                copied_at    TEXT    NOT NULL
+                copied_at    TEXT    NOT NULL,
+                embedding    BLOB    NOT NULL
             );"
         )?;
 
@@ -46,9 +56,11 @@ impl Database {
             ClipboardContent::Empty => ("empty", String::new()),
         };
 
+        let emb_bytes: Option<Vec<u8>> = entry.embedding.as_ref().map(|e| embedding_to_bytes(e));
+
         self.conn.execute(
-            "INSERT INTO clipboard_history (content_type, content, copied_at) VALUES (?1, ?2, ?3)",
-            params![content_type, content, entry.copied_at.to_rfc3339()],
+            "INSERT INTO clipboard_history (content_type, content, copied_at, embedding) VALUES (?1, ?2, ?3, ?4)",
+            params![content_type, content, entry.copied_at.to_rfc3339(), emb_bytes],
         )?;
 
         Ok(self.conn.last_insert_rowid())
@@ -64,7 +76,7 @@ impl Database {
 
     pub fn load_all(&self) -> rusqlite::Result<Vec<ClipboardEntry>> {
         let mut statement = self.conn.prepare(
-            "SELECT id, content_type, content, copied_at FROM clipboard_history ORDER BY copied_at ASC"
+            "SELECT id, content_type, content, copied_at, embedding FROM clipboard_history ORDER BY copied_at ASC"
         )?;
 
         let entries = statement.query_map([], |row| {
@@ -72,6 +84,7 @@ impl Database {
             let content_type: String = row.get(1)?;
             let content_str: String = row.get(2)?;
             let copied_at_str: String = row.get(3)?;
+            let emb_bytes: Option<Vec<u8>> = row.get(4)?;
 
             let content = match content_type.as_str() {
                 "text" => ClipboardContent::Text(content_str),
@@ -83,7 +96,9 @@ impl Database {
                 .map(|dt| dt.with_timezone(&Local))
                 .unwrap_or_else(|_| Local::now());
 
-            Ok(ClipboardEntry { id, content, copied_at })
+            let embedding = emb_bytes.map(|b| bytes_to_embedding(&b));
+
+            Ok(ClipboardEntry { id, content, copied_at, embedding })
         })?.collect::<Result<Vec<_>, _>>()?;
 
         Ok(entries)
