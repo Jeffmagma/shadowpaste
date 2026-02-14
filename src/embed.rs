@@ -23,7 +23,7 @@ impl Embedder {
 		})
 	}
 
-	/// embed text, add `search_document:` prefix
+	/// embed copied text, add `search_document:` prefix
 	pub fn embed_document(&mut self, text: &str) -> anyhow::Result<Embedding> {
 		let prefixed = format!("search_document: {text}");
 		let embeddings = self.text_model.embed(vec![&prefixed], None)?;

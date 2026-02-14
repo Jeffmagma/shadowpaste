@@ -1,51 +1,66 @@
-# Development
+# shadowpaste 🌑
 
-Your new bare-bones project includes minimal organization with a single `main.rs` file and a few assets.
+**shadowpaste** is a modern, AI-powered, high-performance clipboard manager for Windows built with **Rust** and **Dioxus**. It runs silently in the background, capturing your clipboard history and making it instantly searchable using local AI embeddings.
 
-```
-project/
-├─ assets/ # Any assets that are used by the app should be placed here
-├─ src/
-│  ├─ main.rs # main.rs is the entry point to your application and currently contains all components for the app
-├─ Cargo.toml # The Cargo.toml file defines the dependencies and feature flags for your project
-```
+## ✨ Features
 
-### Automatic Tailwind (Dioxus 0.7+)
+*   **⚡ Zero-Latency Capture:** Uses native Windows hooks (`WM_CLIPBOARDUPDATE`) for instant capture with near-zero CPU usage.
+*   **🧠 Local AI Brain:** Embeds your clipboard content using `fastembed-rs` to allow semantic searching (e.g., search "recipe" to find a link to a cooking blog).
+*   **🔒 Privacy First:** Local-only database. Will later detect flags that represent sensitive data and exclude it from the database.
+*   **🎨 Modern UI:** Built with Dioxus (React-like Rust) and Tailwind CSS for a sleek, dark-mode experience.
 
-As of Dioxus 0.7, there no longer is a need to manually install tailwind. Simply `dx serve` and you're good to go!
+## 🛠️ Architecture
 
-Automatic tailwind is supported by checking for a file called `tailwind.css` in your app's manifest directory (next to Cargo.toml). To customize the file, use the dioxus.toml:
+shadowpaste uses a multithreaded architecture to ensure the UI never freezes, even when processing heavy AI tasks.
 
-```toml
-[application]
-tailwind_input = "my.css"
-tailwind_output = "assets/out.css" # also customize the location of the out file!
-```
+```mermaid
+graph TD
+    subgraph "OS Level"
+        Win[OS Clipboard] -- "Change Event" --> Master[clipboard-master]
+    end
 
-### Tailwind Manual Install
+    subgraph "Background Thread (monitor.rs)"
+        Master -- "on_clipboard_change" --> Handler[Clipboard Handler]
+        Handler -- "get_text / get_image" --> Arboard[arboard]
+        Arboard -- "Content" --> Handler
+        Handler -- "tx.send" --> Channel{Tokio Channel}
+    end
 
-To use tailwind plugins or manually customize tailwind, you can install the Tailwind CLI and use it directly.
+    subgraph "Dioxus Interface (main.rs)"
+        Channel -- "rx.recv" --> AppLoop[Clipboard Listener Task]
+        AppLoop -- "Data" --> UIState[History Signal]
+        
+        subgraph "AI Services (embed.rs)"
+            AppLoop -- "compute_embedding" --> FastEmbed[FastEmbed: Nomic V1.5]
+            FastEmbed -- "Vector" --> AppLoop
+            SearchInput[Search Input] -- "embed_query" --> FastEmbed
+        end
 
-### Tailwind
-1. Install npm: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-2. Install the Tailwind CSS CLI: https://tailwindcss.com/docs/installation/tailwind-cli
-3. Run the following command in the root of the project to start the Tailwind CSS compiler:
+        subgraph "Persistence (db.rs)"
+            AppLoop -- "insert" --> SQLite[(SQLite Database)]
+            SQLite -- "load_all" --> UIState
+        end
 
-```bash
-npx @tailwindcss/cli -i ./input.css -o ./assets/tailwind.css --watch
-```
-
-### Serving Your App
-
-Run the following command in the root of your project to start developing with the default platform:
-
-```bash
-dx serve
-```
-
-To run for a different platform, use the `--platform platform` flag. E.g.
-```bash
-dx serve --platform desktop
+        UIState -- "render" --> UI[Desktop Window]
+        SearchInput -- "Score & Filter" --> UI
+    end
 ```
 
+## 🚀 Getting Started
 
+### Prerequisites
+*   [Rust & Cargo](https://rustup.rs/)
+*   [Dioxus CLI](https://dioxuslabs.com/learn/0.4/getting_started/cli) (`cargo install dioxus-cli`)
+
+### Running
+
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/jeffmagma/shadowpaste.git
+    cd shadowpaste
+    ```
+
+2.  **Run the Development Server**
+    ```bash
+    dx serve
+    ```

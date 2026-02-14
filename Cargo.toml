@@ -7,13 +7,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.1", features = [] }
+dioxus = { version = "0.7", features = [] }
 tokio = { version = "1.49.0", features = ["full"] }
 clipboard-master = "4.0.0"
 arboard = "3.6.1"
 image = "0.25.9"
 base64 = "0.22.1"
-rusqlite = { version = "0.34", features = ["bundled"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
 chrono = "0.4"
 dirs = "6"
 fastembed = { version = "5.9.0", features = ["image"] }
