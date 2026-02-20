@@ -9,7 +9,8 @@ use chrono::Local;
 use db::{ClipboardEntry, Database};
 use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 use dioxus::prelude::*;
-use dioxus::desktop::{Config, WindowBuilder};
+use dioxus::desktop::{Config, WindowBuilder, trayicon};
+use dioxus::desktop::{use_tray_icon_event_handler, use_tray_menu_event_handler};
 use embed::Embedder;
 use monitor::ClipboardContent;
 use std::sync::{Arc, Mutex};
@@ -27,7 +28,8 @@ fn main() {
 				.with_undecorated_shadow(false)
                 .with_title("shadowpaste")
                 .with_resizable(true)
-        );
+        )
+        .with_close_behaviour(dioxus::desktop::WindowCloseBehaviour::WindowHides);
 
     LaunchBuilder::desktop().with_cfg(cfg).launch(App);
 }
@@ -56,6 +58,31 @@ fn App() -> Element {
 	let mut search_query = use_signal(|| String::new());
 	let mut query_embedding: Signal<Option<Vec<f32>>> = use_signal(|| None);
 	let mut loading_status = use_signal(|| "Loading embedding models...".to_string());
+
+	// Initialize the window handle for tray interaction
+	let window = dioxus::desktop::use_window();
+
+	// Initialize the tray icon with a default "Quit" menu
+	let _tray = use_signal(|| trayicon::init_tray_icon(trayicon::default_tray_icon(), None));
+
+	// Handle clicks on the tray icon to restore the window
+	let window_clone = window.clone();
+	use_tray_icon_event_handler(move |event| {
+		if let trayicon::TrayIconEvent::Click {
+			button: trayicon::MouseButton::Left,
+			button_state: trayicon::MouseButtonState::Up,
+			..
+		} = event
+		{
+			window_clone.set_visible(true);
+			window_clone.set_focus();
+		}
+	});
+
+	// Handle the tray's context menu (the default has a "Quit" option)
+	use_tray_menu_event_handler(move |_event| {
+		std::process::exit(0);
+	});
 
 	// load db
 	let db: Signal<Arc<Mutex<Database>>> = use_signal(|| {
