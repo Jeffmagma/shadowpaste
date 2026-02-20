@@ -16,35 +16,35 @@ shadowpaste uses a multithreaded architecture to ensure the UI never freezes, ev
 
 ```mermaid
 graph TD
-    subgraph "OS Level"
-        Win[OS Clipboard] -- "Change Event" --> Master[clipboard-master]
-    end
+	subgraph "OS Level"
+		Win[OS Clipboard] -- "Change Event" --> Master[clipboard-master]
+	end
 
-    subgraph "Background Thread (monitor.rs)"
-        Master -- "on_clipboard_change" --> Handler[Clipboard Handler]
-        Handler -- "get_text / get_image" --> Arboard[arboard]
-        Arboard -- "Content" --> Handler
-        Handler -- "tx.send" --> Channel{Tokio Channel}
-    end
+	subgraph "Background Thread (monitor.rs)"
+		Master -- "on_clipboard_change" --> Handler[Clipboard Handler]
+		Handler -- "get_text / get_image" --> Arboard[arboard]
+		Arboard -- "Content" --> Handler
+		Handler -- "tx.send" --> Channel{Tokio Channel}
+	end
 
-    subgraph "Dioxus Interface (main.rs)"
-        Channel -- "rx.recv" --> AppLoop[Clipboard Listener Task]
-        AppLoop -- "Data" --> UIState[History Signal]
-        
-        subgraph "AI Services (embed.rs)"
-            AppLoop -- "compute_embedding" --> FastEmbed[FastEmbed: Nomic V1.5]
-            FastEmbed -- "Vector" --> AppLoop
-            SearchInput[Search Input] -- "embed_query" --> FastEmbed
-        end
+	subgraph "Dioxus Interface (main.rs)"
+		Channel -- "rx.recv" --> AppLoop[Clipboard Listener Task]
+		AppLoop -- "Data" --> UIState[History Signal]
+		
+		subgraph "AI Services (embed.rs)"
+			AppLoop -- "compute_embedding" --> FastEmbed[FastEmbed: Nomic V1.5]
+			FastEmbed -- "Vector" --> AppLoop
+			SearchInput[Search Input] -- "embed_query" --> FastEmbed
+		end
 
-        subgraph "Persistence (db.rs)"
-            AppLoop -- "insert" --> SQLite[(SQLite Database)]
-            SQLite -- "load_all" --> UIState
-        end
+		subgraph "Persistence (db.rs)"
+			AppLoop -- "insert" --> SQLite[(SQLite Database)]
+			SQLite -- "load_all" --> UIState
+		end
 
-        UIState -- "render" --> UI[Desktop Window]
-        SearchInput -- "Score & Filter" --> UI
-    end
+		UIState -- "render" --> UI[Desktop Window]
+		SearchInput -- "Score & Filter" --> UI
+	end
 ```
 
 ## 🚀 Getting Started
@@ -56,20 +56,20 @@ graph TD
 ### Running
 
 1.  **Clone the repository**
-    ```bash
-    git clone https://github.com/jeffmagma/shadowpaste.git
-    cd shadowpaste
-    ```
+	```bash
+	git clone https://github.com/jeffmagma/shadowpaste.git
+	cd shadowpaste
+	```
 
 2.  **Run the Development Server**
-    ```bash
-    dx serve
-    ```
+	```bash
+	dx serve
+	```
 
 3.  **Build for Release**
-    ```bash
-    dx build --release --platform desktop
-    ```
+	```bash
+	dx build --release --platform desktop
+	```
 
 ## 🗺️ Roadmap
 - [ ] Sensitive data/password handling

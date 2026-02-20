@@ -3,19 +3,33 @@ mod db;
 mod embed;
 mod monitor;
 mod clipboard_view;
+mod titlebar;
 
 use chrono::Local;
 use db::{ClipboardEntry, Database};
+use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 use dioxus::prelude::*;
+use dioxus::desktop::{Config, WindowBuilder};
 use embed::Embedder;
 use monitor::ClipboardContent;
 use std::sync::{Arc, Mutex};
 use crate::clipboard_view::ClipboardView;
+use crate::titlebar::Titlebar;
 
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 fn main() {
-	launch(App);
+    let cfg = Config::new()
+        .with_window(
+            WindowBuilder::new()
+                .with_decorations(false)
+                .with_transparent(true)
+				.with_undecorated_shadow(false)
+                .with_title("shadowpaste")
+                .with_resizable(true)
+        );
+
+    LaunchBuilder::desktop().with_cfg(cfg).launch(App);
 }
 
 /// get raw image bytes from base64 data URI like "data:image/png;base64,..."
@@ -202,27 +216,56 @@ fn App() -> Element {
 
 	rsx! {
 		Stylesheet { href: TAILWIND_CSS }
+		style { "
+			::-webkit-scrollbar {{ width: 8px; }}
+			::-webkit-scrollbar-track {{ background: transparent; }}
+			::-webkit-scrollbar-thumb {{ background: #334155; border-radius: 4px; }}
+			::-webkit-scrollbar-thumb:hover {{ background: #475569; }}
+		" }
 
-		div { class: "p-6 font-sans max-w-3xl mx-auto",
-			h2 { class: "text-2xl font-bold mb-4", "shadowpaste" }
+		div { class: "h-screen w-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden rounded-xl border border-slate-800 shadow-2xl",
+			Titlebar {}
 
-			input {
-				class: "w-full mb-4 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400",
-				placeholder: "Search clipboard history...",
-				value: "{search_query}",
-				oninput: move |e| {
-					search_query.set(e.value());
-					query_embedding.set(None); // reset so the query re-embeds
-				},
-			}
+			div { class: "flex-1 flex flex-col p-4 gap-4 overflow-hidden",
+                // search bar
+				div { class: "relative group shrink-0",
+					div { class: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none",
+						// search icon
+						svg { class: "h-4 w-4 text-slate-500 group-focus-within:text-blue-400 transition-colors", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+							path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" }
+						}
+					}
+					input {
+						class: "w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 placeholder-slate-500
+								focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all shadow-sm",
+						placeholder: "Type to search clipboard history...",
+						value: "{search_query}",
+						oninput: move |e| {
+							search_query.set(e.value());
+							query_embedding.set(None); // reset so the query re-embeds
+						},
+						// auto-focus on start
+						onmounted: move |evt| { spawn(async move { let _ = evt.set_focus(true).await; }); }
+					}
+				}
 
-			for (entry, sim) in items.iter() {
-				div { key: "{entry.id}", class: "py-3 border-b border-gray-100 last:border-0",
-					ClipboardView {
-						entry: entry.clone(),
-						on_delete: delete_entry,
-						search_query: query_for_view.clone(),
-						similarity: *sim,
+                // results
+				div { class: "flex-1 overflow-y-auto pr-1 space-y-2",
+					if items.is_empty() {
+						div { class: "flex flex-col items-center justify-center h-full text-slate-600 gap-2",
+							div { class: "text-4xl opacity-20", "📋" }
+							p { class: "text-sm", "No clipboard history found" }
+						}
+					}
+					for (entry, sim) in items.iter() {
+						div { key: "{entry.id}", class: "group/item",
+							ClipboardView {
+								entry: entry.clone(),
+								on_delete: delete_entry,
+								search_query: query_for_view.clone(),
+								similarity: *sim,
+							}
+						}
 					}
 				}
 			}
