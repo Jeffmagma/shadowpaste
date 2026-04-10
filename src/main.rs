@@ -4,18 +4,21 @@ mod embed;
 mod monitor;
 mod clipboard_view;
 mod titlebar;
+mod quick_paste;
 
 use chrono::Local;
 use db::{ClipboardEntry, Database};
 use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 use dioxus::prelude::*;
 use dioxus::desktop::{Config, WindowBuilder, trayicon};
-use dioxus::desktop::{use_tray_icon_event_handler, use_tray_menu_event_handler};
+use dioxus::desktop::{use_global_shortcut, use_tray_icon_event_handler, use_tray_menu_event_handler, HotKeyState};
 use embed::Embedder;
 use monitor::ClipboardContent;
 use std::sync::{Arc, Mutex};
 use crate::clipboard_view::ClipboardView;
+use crate::quick_paste::ClipboardWriteSuppression;
 use crate::titlebar::Titlebar;
+use crate::quick_paste::{QuickPaste, QuickPasteProps, quick_paste_config};
 
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
@@ -58,31 +61,55 @@ fn App() -> Element {
 	let mut search_query = use_signal(|| String::new());
 	let mut query_embedding: Signal<Option<Vec<f32>>> = use_signal(|| None);
 	let mut loading_status = use_signal(|| "Loading embedding models...".to_string());
-
-	// Initialize the window handle for tray interaction
+	let clipboard_write_suppression: Signal<ClipboardWriteSuppression> = use_signal(|| Arc::new(Mutex::new(false)));
+	
 	let window = dioxus::desktop::use_window();
 
-	// Initialize the tray icon with a default "Quit" menu
+	// initialize tray
 	let _tray = use_signal(|| trayicon::init_tray_icon(trayicon::default_tray_icon(), None));
 
-	// Handle clicks on the tray icon to restore the window
+	// click icon to restore window
 	let window_clone = window.clone();
 	use_tray_icon_event_handler(move |event| {
 		if let trayicon::TrayIconEvent::Click {
 			button: trayicon::MouseButton::Left,
 			button_state: trayicon::MouseButtonState::Up,
 			..
-		} = event
-		{
+		} = event {
 			window_clone.set_visible(true);
 			window_clone.set_focus();
 		}
 	});
 
-	// Handle the tray's context menu (the default has a "Quit" option)
+	// only a quit option in the tray
 	use_tray_menu_event_handler(move |_event| {
 		std::process::exit(0);
 	});
+
+	// ctrl+shift+v opens the quick-paste popup window
+	let window_for_hotkey = window.clone();
+	let history_for_hotkey = history;
+	let suppression_for_hotkey = clipboard_write_suppression();
+	let _ = use_global_shortcut(
+		"Ctrl+Shift+KeyV",
+		move |state| {
+			if state == HotKeyState::Pressed {
+				let w = window_for_hotkey.clone();
+				let mut entries = history_for_hotkey();
+				entries.reverse();
+				let suppression = suppression_for_hotkey.clone();
+				spawn(async move {
+					let dom = dioxus::core::VirtualDom::new_with_props(
+						QuickPaste,
+						QuickPasteProps { entries },
+					)
+					.with_root_context(suppression);
+					let popup = w.new_window(dom, quick_paste_config()).await;
+					popup.set_focus();
+				});
+			}
+		},
+	);
 
 	// load db
 	let db: Signal<Arc<Mutex<Database>>> = use_signal(|| {
@@ -119,9 +146,25 @@ fn App() -> Element {
 	use_effect(move || {
 		let mut rx = monitor::start_listener();
 		let db = db().clone();
+		let suppression = clipboard_write_suppression();
 
 		spawn(async move {
 			while let Some(content) = rx.recv().await {
+				let should_skip = if let Ok(mut suppressed) = suppression.lock() {
+					if *suppressed {
+						*suppressed = false;
+						true
+					} else {
+						false
+					}
+				} else {
+					false
+				};
+
+				if should_skip {
+					continue;
+				}
+
 				let emb = if let Some(ref emb_arc) = embedder() {
 					if let Ok(mut emb_guard) = emb_arc.lock() {
 						compute_embedding(&mut emb_guard, &content)
