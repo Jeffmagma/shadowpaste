@@ -16,7 +16,7 @@ fn decode_data_uri(data_uri: &str) -> Option<Vec<u8>> {
 	general_purpose::STANDARD.decode(b64).ok()
 }
 
-fn write_clipboard_content(content: &ClipboardContent) -> anyhow::Result<()> {
+pub fn write_clipboard_content(content: &ClipboardContent) -> anyhow::Result<()> {
 	let mut clipboard = Clipboard::new()?;
 	match content {
 		ClipboardContent::Text(text) => clipboard.set_text(text.clone())?,

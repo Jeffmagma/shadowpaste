@@ -16,7 +16,7 @@ use embed::Embedder;
 use monitor::ClipboardContent;
 use std::sync::{Arc, Mutex};
 use crate::clipboard_view::ClipboardView;
-use crate::quick_paste::ClipboardWriteSuppression;
+use crate::quick_paste::{ClipboardWriteSuppression, write_clipboard_content};
 use crate::titlebar::Titlebar;
 use crate::quick_paste::{QuickPaste, QuickPasteProps, quick_paste_config};
 
@@ -59,9 +59,10 @@ fn compute_embedding(embedder: &mut Embedder, content: &ClipboardContent) -> Opt
 fn App() -> Element {
 	let mut history = use_signal(|| Vec::<ClipboardEntry>::new());
 	let mut search_query = use_signal(|| String::new());
-	let mut query_embedding: Signal<Option<Vec<f32>>> = use_signal(|| None);
 	let mut loading_status = use_signal(|| "Loading embedding models...".to_string());
 	let clipboard_write_suppression: Signal<ClipboardWriteSuppression> = use_signal(|| Arc::new(Mutex::new(false)));
+	let mut context_menu = use_signal(|| None::<(i64, f64, f64)>);
+	let mut pending_delete = use_signal(|| None::<i64>);
 	
 	let window = dioxus::desktop::use_window();
 
@@ -142,6 +143,20 @@ fn App() -> Element {
 		});
 	});
 
+	// wait for typing to settle before embedding search query
+	let query_embedding = use_resource(move || async move {
+		let trimmed = search_query().trim().to_string();
+		let emb_opt = embedder();
+		if trimmed.is_empty() { return None; }
+		let Some(emb_arc) = emb_opt else { return None; };
+
+		tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+
+		tokio::task::spawn_blocking(move || {
+			emb_arc.lock().ok().and_then(|mut g| g.embed_query(&trimmed).ok())
+		}).await.ok().flatten()
+	});
+
 	// start clipboard listener
 	use_effect(move || {
 		let mut rx = monitor::start_listener();
@@ -193,11 +208,13 @@ fn App() -> Element {
 		});
 	});
 
-	let delete_entry = move |id: i64| {
-		if let Ok(db_guard) = db().lock() {
-			let _ = db_guard.delete_by_id(id);
-		}
-		history.write().retain(|e| e.id != id);
+	let on_delete_request = move |id: i64| {
+		context_menu.set(None);
+		pending_delete.set(Some(id));
+	};
+
+	let on_context_menu_request = move |(id, x, y): (i64, f64, f64)| {
+		context_menu.set(Some((id, x, y)));
 	};
 
 	// splash screen while embedding models load
@@ -206,12 +223,15 @@ fn App() -> Element {
 	if !is_ready {
 		return rsx! {
 			Stylesheet { href: TAILWIND_CSS }
-			div { class: "flex flex-col items-center justify-center h-screen gap-4",
-				div { class: "text-4xl font-bold text-slate-700", "shadowpaste" }
-				div { class: "flex items-center gap-3",
-					// css spinner
-					div { class: "w-5 h-5 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" }
-					span { class: "text-sm text-slate-500", "{loading_status}" }
+			div { class: "h-screen w-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden rounded-xl border border-slate-800 shadow-2xl",
+				Titlebar {}
+				div { class: "flex-1 flex flex-col items-center justify-center gap-4",
+					div { class: "text-4xl font-bold text-slate-700", "shadowpaste" }
+					div { class: "flex items-center gap-3",
+						// css spinner
+						div { class: "w-5 h-5 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" }
+						span { class: "text-sm text-slate-500", "{loading_status}" }
+					}
 				}
 			}
 		};
@@ -227,7 +247,7 @@ fn App() -> Element {
 			v
 		} else {
 			let query_lower = query.trim().to_lowercase();
-			let q_emb_opt = query_embedding();
+			let q_emb_opt: Option<Vec<f32>> = query_embedding().flatten();
 
 			// (score_for_sorting, entry, similarity)
 			let mut scored: Vec<(f32, ClipboardEntry, f32)> = Vec::new();
@@ -271,17 +291,6 @@ fn App() -> Element {
 		}
 	};
 
-	// embed query text when it changes
-	if !query.trim().is_empty() && query_embedding().is_none() {
-		if let Some(ref emb_arc) = embedder() {
-			if let Ok(mut emb_guard) = emb_arc.lock() {
-				if let Ok(emb) = emb_guard.embed_query(query.trim()) {
-					query_embedding.set(Some(emb));
-				}
-			}
-		}
-	}
-
 	let query_for_view = query.clone();
 
 	rsx! {
@@ -312,7 +321,6 @@ fn App() -> Element {
 						value: "{search_query}",
 						oninput: move |e| {
 							search_query.set(e.value());
-							query_embedding.set(None); // reset so the query re-embeds
 						},
 						// auto-focus on start
 						onmounted: move |evt| { spawn(async move { let _ = evt.set_focus(true).await; }); }
@@ -331,9 +339,86 @@ fn App() -> Element {
 						div { key: "{entry.id}", class: "group/item",
 							ClipboardView {
 								entry: entry.clone(),
-								on_delete: delete_entry,
+								on_delete: on_delete_request,
+								on_context_menu: on_context_menu_request,
 								search_query: query_for_view.clone(),
 								similarity: *sim,
+							}
+						}
+					}
+				}
+			}
+
+			// right-click context menu
+			if let Some((id, x, y)) = context_menu() {
+				div {
+					class: "fixed inset-0 z-[100]",
+					onclick: move |_| context_menu.set(None),
+					oncontextmenu: move |evt| {
+						evt.prevent_default();
+						context_menu.set(None);
+					},
+					div {
+						class: "absolute bg-slate-900 border border-slate-700 rounded-md shadow-xl py-1 min-w-[140px]",
+						style: "top: {y}px; left: {x}px;",
+						onclick: move |evt| evt.stop_propagation(),
+						button {
+							class: "w-full px-3 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800 transition-colors",
+							onclick: move |_| {
+								let entries = history();
+								if let Some(entry) = entries.iter().find(|e| e.id == id) {
+									if let Ok(mut suppressed) = clipboard_write_suppression().lock() {
+										*suppressed = true;
+									}
+									if let Err(err) = write_clipboard_content(&entry.content) {
+										if let Ok(mut suppressed) = clipboard_write_suppression().lock() {
+											*suppressed = false;
+										}
+										eprintln!("Failed to copy entry: {err}");
+									}
+								}
+								context_menu.set(None);
+							},
+							"Copy"
+						}
+						button {
+							class: "w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-slate-800 transition-colors",
+							onclick: move |_| {
+								context_menu.set(None);
+								pending_delete.set(Some(id));
+							},
+							"Delete"
+						}
+					}
+				}
+			}
+
+			// delete confirmation
+			if let Some(id) = pending_delete() {
+				div {
+					class: "fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm",
+					onclick: move |_| pending_delete.set(None),
+					div {
+						class: "bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-5 w-80",
+						onclick: move |evt| evt.stop_propagation(),
+						h3 { class: "text-base font-semibold text-slate-200 mb-1", "Delete entry?" }
+						p { class: "text-sm text-slate-400 mb-4", "This action cannot be undone." }
+						div { class: "flex gap-2 justify-end",
+							button {
+								class: "px-3 py-1.5 text-sm text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors",
+								onclick: move |_| pending_delete.set(None),
+								"Cancel"
+							}
+							button {
+								class: "px-3 py-1.5 text-sm text-white bg-red-500/80 hover:bg-red-500 rounded-md transition-colors",
+								onclick: move |_| {
+									if let Ok(db_guard) = db().lock() {
+										let _ = db_guard.delete_by_id(id);
+									}
+									history.write().retain(|e| e.id != id);
+									pending_delete.set(None);
+								},
+								"Delete"
 							}
 						}
 					}
